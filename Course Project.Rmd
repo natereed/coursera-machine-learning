@@ -1,0 +1,10 @@
+---
+title: "Machine Learning Course Project"
+author: "Nathaniel Reed"
+date: "December 24, 2015"
+output: html_document
+---
+
+1. Analysis (limit:2000 words)
+
+2. Apply your machine learning algorithm to the 20 test cases
