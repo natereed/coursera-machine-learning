@@ -1,10 +1,118 @@
 ---
-title: "Machine Learning Course Project"
+title: "Machine Learning Course Project: Human Activity Recognition"
 author: "Nathaniel Reed"
 date: "December 24, 2015"
 output: html_document
 ---
 
-1. Analysis (limit:2000 words)
+```{r, results='hide', message=FALSE, echo=FALSE, warning=FALSE}
+library(caret)
+library(dplyr)
+library(lattice)
+library(gridExtra)
+library(randomForest)
+library(scatterplot3d)
+```
 
-2. Apply your machine learning algorithm to the 20 test cases
+## Introduction
+
+In this brief report, we use the Human Activity Recognition data set to analyze the movement patterns of test subjects and fit a predictive model that accurately classifies the type of movement given a training and test sets that contain sensor data. We use Random Forest and analyze the important variables and the error rate on the out-of-bag samples used by this algorithm, then show the predicted values.
+
+## Getting and Cleaning the Data
+
+```{r}
+training <- read.csv("pml-training.csv")
+````
+
+Subset by removing variables with missing data. In addition, to avoid over-fitting, we remove the timestamps and index variable "X":
+
+```{r}
+toDrop <- c("kurtosis", "skewness", "avg_", "stddev", "var", "amplitude", "min", "max", "cvtd_timestamp", "num_window", "new_window", "user_name", "X", "raw_timestamp")
+training <- subset(training, select = -grep(paste(toDrop, collapse="|"), names(training)))
+```
+
+## Exploratory Analysis: Feature plots
+
+Density plots show the distributions of variables for each "classe" factor. There is a distinctive pattern per variable for each class of movement. Notice the arm and belt measurements below:
+
+```{r}
+featurePlot(x=training[,c("roll_belt", "pitch_belt", "yaw_belt")], y=training$classe, plot="density", auto.key=list(columns=5))
+featurePlot(x=training[,c("gyros_arm_x", "gyros_arm_y", "gyros_arm_z")], y=training$classe, plot="density", auto.key=list(columns=5))
+```
+
+The extents and averages of each variable can also tell us a lot about the movement. The minimum, maximum and mean measurements for the gyroscope x, y and z measurements are shown below. There seems to be a strong relationship between each variable and the type of movement:
+
+```{r}
+by_classe <- group_by(training, classe) %>% mutate(min_gyros_arm_x = min(gyros_arm_x),
+                                               min_gyros_arm_y = min(gyros_arm_y),
+                                               min_gyros_arm_z = min(gyros_arm_z),
+                                               max_gyros_arm_x = max(gyros_arm_x),
+                                               max_gyros_arm_y = max(gyros_arm_y),
+                                               max_gyros_arm_z = max(gyros_arm_z),
+                                               mean_gyros_arm_x = mean(gyros_arm_x),
+                                               mean_gyros_arm_y = mean(gyros_arm_y),
+                                               mean_gyros_arm_z = mean(gyros_arm_z)) 
+p1 <- xyplot(by_classe$min_gyros_arm_x ~ by_classe$classe, fill.color=colors, groups=by_classe$classe, pch=c(1,2,3,4,5), xlab = "Movement type", ylab="Min X")
+p2 <- xyplot(by_classe$min_gyros_arm_y ~ by_classe$classe, fill.color=colors, groups=by_classe$classe, pch=c(1,2,3,4,5), xlab = "Movement type", ylab="Min Y")
+p3 <- xyplot(by_classe$min_gyros_arm_z ~ by_classe$classe, fill.color=colors, groups=by_classe$classe, pch=c(1,2,3,4,5), xlab = "Movement type", ylab="Min Z")
+
+p4 <- xyplot(by_classe$max_gyros_arm_x ~ by_classe$classe, fill.color=colors, groups=by_classe$classe, pch=c(1,2,3,4,5), xlab = "Movement type", ylab="Max X")
+p5 <- xyplot(by_classe$max_gyros_arm_y ~ by_classe$classe, fill.color=colors, groups=by_classe$classe, pch=c(1,2,3,4,5), xlab = "Movement type", ylab="Max Y")
+p6 <- xyplot(by_classe$max_gyros_arm_z ~ by_classe$classe, fill.color=colors, groups=by_classe$classe, pch=c(1,2,3,4,5), xlab = "Movement type", ylab="Max Z")
+
+p7 <- xyplot(by_classe$mean_gyros_arm_x ~ by_classe$classe, fill.color=colors, groups=by_classe$classe, pch=c(1,2,3,4,5), xlab = "Movement type", ylab="Mean X")
+p8 <- xyplot(by_classe$mean_gyros_arm_y ~ by_classe$classe, fill.color=colors, groups=by_classe$classe, pch=c(1,2,3,4,5), xlab = "Movement type", ylab="Mean Y")
+p9 <- xyplot(by_classe$mean_gyros_arm_z ~ by_classe$classe, fill.color=colors, groups=by_classe$classe, pch=c(1,2,3,4,5), xlab = "Movement type", ylab="Mean Z")
+
+grid.arrange(p1,p2,p3,p4,p5,p6,p7,p8,p9,ncol=3)
+```
+
+## Model
+
+To build a predictive model, we use the RandomForest package:
+
+```{r}
+modFit <- randomForest(classe ~ ., data=training, importance=TRUE, ntree=10, proximity=TRUE)
+modFit
+varImp(modFit)[1:10,]
+```
+
+## Model Fit
+
+It's difficult to visualize the centers of the clusters in a data set with a high number of dimensions like this one, but we can look at some of the most important variables. The belt measurements for roll, picth and yaw are ranked most important in the random forest model we built. Here we can see the cluster centers in 3 dimensions (we could use a similar approach for the x, y and z of the other sensors):
+
+```{r, echo=TRUE, warning=FALSE}
+classeP <- classCenter(training[,c("roll_belt", "pitch_belt", "yaw_belt")], training$classe, modFit$proximity)
+classeP <- as.data.frame(classeP); classeP$classe <- rownames(classeP)
+colors <- c("red", "blue", "yellow", "green", "purple")
+colors <- colors[as.numeric(training$classe)]
+s3d <- scatterplot3d(x=training$roll_belt, y=training$pitch_belt, z=training$yaw_belt, type="h", color=colors) 
+s3d$points3d(x=classeP$roll_belt, 
+             y=classeP$pitch_belt, 
+             z=classeP$yaw_belt, 
+             type="h", data=classeP, pch=c(1,2,3,4,5), col="black") 
+```
+
+## Cross-Validation
+
+Cross-validation is performed internally as the random forest is grown. See "Random Forests" (http://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm#ooberr). Our OOB error estimate is roughly 3%.
+
+Using rfcv, we can see the out-of-bag error rate for each iteration of Random Forest, in which the number of variables are successively reduced and a subset of data is used to grow the forest:
+
+```{r}
+result <- rfcv(training, training$classe, cv.fold=5)
+result['error.cv']
+```
+
+## Predictions
+
+The predictions for the test set are shown below:
+
+```{r}
+testing <- read.csv("pml-testing.csv")
+predict(modFit, testing)
+```
+
+## Source Code
+
+The source code (.Rmd and .html) files for this page are available at https://github.com/natereed/coursera-machine-learning.
