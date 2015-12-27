@@ -115,4 +115,4 @@ predict(modFit, testing)
 
 ## Source Code
 
-The source code (.Rmd and .html) files for this page are available at https://github.com/natereed/coursera-machine-learning.
+The source code (.Rmd and .html) files for this page are available at http://github.com/natereed/coursera-machine-learning.
