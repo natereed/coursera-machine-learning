@@ -67,50 +67,59 @@ p9 <- xyplot(by_classe$mean_gyros_arm_z ~ by_classe$classe, fill.color=colors, g
 grid.arrange(p1,p2,p3,p4,p5,p6,p7,p8,p9,ncol=3)
 ```
 
-## Model
+## Partition the Data
 
-To build a predictive model, we use the RandomForest package:
+To speed up the building of our model and to validate the model we will use a portion of the data as a training set and the remainder for validation:
 
 ```{r}
-modFit <- randomForest(classe ~ ., data=training, importance=TRUE, ntree=10, proximity=TRUE)
-modFit
-varImp(modFit)[1:10,]
+InTrain<-createDataPartition(y=training$classe,p=0.3,list=FALSE)
+training_subset<-training[InTrain,]
+testing_subset<-training[-InTrain,]
 ```
 
-## Model Fit
+## Model
 
-It's difficult to visualize the centers of the clusters in a data set with a high number of dimensions like this one, but we can look at some of the most important variables. The belt measurements for roll, picth and yaw are ranked most important in the random forest model we built. Here we can see the cluster centers in 3 dimensions (we could use a similar approach for the x, y and z of the other sensors):
+For performance, we will register multiple cores with the multicore package, which will allow train() to build multiple trees in parallel. Your results may vary, depending on your hardware:
 
-```{r, echo=TRUE, warning=FALSE}
-classeP <- classCenter(training[,c("roll_belt", "pitch_belt", "yaw_belt")], training$classe, modFit$proximity)
-classeP <- as.data.frame(classeP); classeP$classe <- rownames(classeP)
-colors <- c("red", "blue", "yellow", "green", "purple")
-colors <- colors[as.numeric(training$classe)]
-s3d <- scatterplot3d(x=training$roll_belt, y=training$pitch_belt, z=training$yaw_belt, type="h", color=colors) 
-s3d$points3d(x=classeP$roll_belt, 
-             y=classeP$pitch_belt, 
-             z=classeP$yaw_belt, 
-             type="h", data=classeP, pch=c(1,2,3,4,5), col="black") 
+```{r, message=FALSE, warning=FALSE}
+library(doMC)
+registerDoMC(5)
+```
+
+Next we build the model using random forests with with 5-fold cross-validation, setting allowParallel to enable train to take advantage of parallel processing:
+
+```{r}
+modFit <- train(classe~.,data=training_subset,method="rf",
+                trControl=trainControl(method="cv",number=5),
+                prox=TRUE,allowParallel=TRUE)
+varImp(modFit)
 ```
 
 ## Cross-Validation
 
-Cross-validation is performed internally as the random forest is grown. See "Random Forests" (http://www.stat.berkeley.edu/~breiman/RandomForests/cc_home.htm#ooberr). Our OOB error estimate is roughly 3%.
-
-Using rfcv, we can see the out-of-bag error rate for each iteration of Random Forest, in which the number of variables are successively reduced and a subset of data is used to grow the forest:
+The resulting model is highly accurate, with an error rate of approximately 2%. We would like to see how accurate it is on the hold-out set of testing data, too:
 
 ```{r}
-result <- rfcv(training, training$classe, cv.fold=5)
-result['error.cv']
+predictions <- predict(modFit, testing_subset)
+confusionMatrix(predictions, testing_subset$classe)
 ```
 
-## Predictions
+We see that the model performs well on the testing data, too, with an accuracy of 98%.
 
-The predictions for the test set are shown below:
+## Analyzing Model Fit
 
-```{r}
-testing <- read.csv("pml-testing.csv")
-predict(modFit, testing)
+It's difficult to visualize the centers of the clusters in a data set with a high number of dimensions like this one, but we can look at some of the most important variables. The belt measurements for roll, picth and yaw are ranked most important in the random forest model we built. Here we can see the cluster centers in 3 dimensions (we could use a similar approach for the x, y and z of the other sensors):
+
+```{r, echo=TRUE, warning=FALSE}
+classeP <- classCenter(training_subset[,c("roll_belt", "pitch_belt", "yaw_belt")], training_subset$classe, modFit$finalModel$proximity)
+classeP <- as.data.frame(classeP); classeP$classe <- rownames(classeP)
+colors <- c("red", "blue", "yellow", "green", "purple")
+colors <- colors[as.numeric(training_subset$classe)]
+s3d <- scatterplot3d(x=training_subset$roll_belt, y=training_subset$pitch_belt, z=training_subset$yaw_belt, type="h", color=colors) 
+s3d$points3d(x=classeP$roll_belt, 
+             y=classeP$pitch_belt, 
+             z=classeP$yaw_belt, 
+             type="h", data=classeP, pch=c(1,2,3,4,5), col="black") 
 ```
 
 ## Source Code
